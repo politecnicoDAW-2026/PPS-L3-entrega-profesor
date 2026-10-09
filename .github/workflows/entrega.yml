@@ -20,6 +20,7 @@ jobs:
   comprobar:
     name: comprobar
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # si algo se cuelga, se corta a los 15 minutos
     steps:
       - name: Descargar el código
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -72,6 +73,7 @@ jobs:
     needs: comprobar
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write # subir la imagen a GitHub Container Registry
