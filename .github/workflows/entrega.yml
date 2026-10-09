@@ -1,0 +1,120 @@
+# Entrega segura: comprueba cada pull request y, al fusionar en main, publica la imagen y la firma.
+name: Entrega segura
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Por defecto, el token del workflow solo puede leer el código
+permissions:
+  contents: read
+
+# Herramientas en contenedor, fijadas por versión y por digest
+env:
+  HADOLINT: hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
+  TRIVY: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+
+jobs:
+  comprobar:
+    name: comprobar
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Pruebas
+        run: |
+          npm ci
+          npm test
+
+      - name: Revisar el Dockerfile con Hadolint
+        run: docker run --rm -i "$HADOLINT" < Dockerfile
+
+      - name: Construir la imagen
+        run: docker build -t "app:$GITHUB_SHA" .
+
+      - name: Analizar vulnerabilidades (falla si hay alguna crítica)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" image \
+            --no-progress --severity CRITICAL --exit-code 1 "app:$GITHUB_SHA"
+
+      - name: Resumen de vulnerabilidades altas y críticas
+        if: always()
+        run: |
+          {
+            echo "## Vulnerabilidades altas y críticas de la imagen"
+            echo '```'
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" image \
+              --no-progress --severity HIGH,CRITICAL --format table "app:$GITHUB_SHA"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generar el SBOM
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/salida" "$TRIVY" image \
+            --no-progress --format cyclonedx --output /salida/sbom.cdx.json "app:$GITHUB_SHA"
+
+      - name: Guardar el SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: sbom.cdx.json
+
+  publicar:
+    name: publicar y firmar
+    needs: comprobar
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # subir la imagen a GitHub Container Registry
+      id-token: write # pedir a GitHub la identidad con la que firma cosign
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Instalar cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+
+      - name: Iniciar sesión en GitHub Container Registry
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USUARIO: ${{ github.actor }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "$USUARIO" --password-stdin
+
+      - name: Construir y analizar la imagen que se va a publicar
+        run: |
+          IMAGEN="ghcr.io/${GITHUB_REPOSITORY,,}:$GITHUB_SHA"   # GHCR exige minúsculas
+          echo "IMAGEN=$IMAGEN" >> "$GITHUB_ENV"
+          docker build -t "$IMAGEN" .
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" image \
+            --no-progress --severity CRITICAL --exit-code 1 "$IMAGEN"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/salida" "$TRIVY" image \
+            --no-progress --format cyclonedx --output /salida/sbom.cdx.json "$IMAGEN"
+
+      - name: Publicar
+        run: |
+          docker push "$IMAGEN"
+          DIGEST=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGEN")
+          echo "DIGEST=$DIGEST" >> "$GITHUB_ENV"
+          {
+            echo "## Imagen publicada"
+            echo '```'
+            echo "$DIGEST"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Firmar la imagen sin claves, con la identidad de este workflow
+        run: cosign sign --yes "$DIGEST"
+
+      - name: Adjuntar el SBOM firmado
+        run: cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "$DIGEST"
