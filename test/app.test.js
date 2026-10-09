@@ -10,3 +10,11 @@ test('la portada responde con la versión', async () => {
   assert.match(await respuesta.text(), /versión \d+\.\d+\.\d+/);
   servidor.close();
 });
+
+test('la ruta de salud responde 200', async () => {
+  const servidor = app.listen(0);
+  const { port } = servidor.address();
+  const respuesta = await fetch(`http://localhost:${port}/salud`);
+  assert.equal(respuesta.status, 200);
+  servidor.close();
+});
