@@ -19,7 +19,7 @@ env:
 jobs:
   comprobar:
     name: comprobar
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15 # si algo se cuelga, se corta a los 15 minutos
     steps:
       - name: Descargar el código
@@ -72,7 +72,7 @@ jobs:
     name: publicar y firmar
     needs: comprobar
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
