@@ -13,3 +13,14 @@ test('la portada responde con la versión', async () => {
     servidor.close();                             // se cierra aunque falle una comprobación
   }
 });
+
+test('la ruta de salud responde 200', async () => {
+  const servidor = app.listen(0);
+  try {
+    const { port } = servidor.address();
+    const respuesta = await fetch(`http://localhost:${port}/salud`);
+    assert.equal(respuesta.status, 200);
+  } finally {
+    servidor.close();
+  }
+});
