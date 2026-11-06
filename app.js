@@ -11,5 +11,5 @@ app.get('/', (req, res) => {
 
 // Salud: la consulta el HEALTHCHECK de la imagen
 app.get('/salud', (req, res) => {
-  res.status(500).json({ estado: 'roto' });
+  res.json({ estado: 'ok' });
 });
