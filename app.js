@@ -6,7 +6,7 @@ export const app = express();
 
 // Portada: dice qué versión está desplegada
 app.get('/', (req, res) => {
-  res.send(`Hola desde la versión ${paquete.version}`);
+  res.send(`Hola desde la versión ${paquete.version} · entrega segura`);
 });
 
 // Salud: la consulta el HEALTHCHECK de la imagen
