@@ -1,11 +1,11 @@
 # Etapa 1: instala solo las dependencias de producción, exactamente las del package-lock.json
-FROM node:24-alpine AS dependencias
+FROM node:16-alpine AS dependencias
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 # Etapa 2: la imagen que va a producción
-FROM node:24-alpine
+FROM node:16-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=dependencias /app/node_modules ./node_modules
